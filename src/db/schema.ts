@@ -81,7 +81,7 @@ export const userSettings = sqliteTable("user_settings", {
   proveedorIAFavorito: text("proveedor_ia_favorito").notNull().default("google"),
   modeloIAFavorito: text("modelo_ia_favorito")
     .notNull()
-    .default("gemini-2.5-flash"),
+    .default("gemini-3.5-flash"),
 });
 
 export const jobsRelations = relations(jobs, ({ many }) => ({
