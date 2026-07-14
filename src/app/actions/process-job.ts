@@ -33,7 +33,7 @@ export type ProcessJobInput = {
   urlOriginal?: string | null;
   provider?: AIProvider;
   model?: string;
-  /** Si true, reprocesa una vacante ya registrada sin crear duplicado en el kanban. */
+  /** Si true, permite reprocesar una vacante ya registrada. */
   force?: boolean;
 };
 
@@ -42,6 +42,47 @@ export type ProcessJobHabilidad = {
   tipo: TipoHabilidad;
   exigencia: ExigenciaHabilidad;
 };
+
+export type JobExtractionDraft = {
+  cargo: string;
+  empresa: string;
+  experienciaRequerida: string;
+  habilidades: ProcessJobHabilidad[];
+  textoVacante: string;
+  urlOriginal: string;
+  provider: AIProvider;
+  model: string;
+  force: boolean;
+  existingJobId?: number;
+  /** Nombres (lowercase) ya presentes en skills_tracker. */
+  existingSkillNames: string[];
+};
+
+type FailureResult = {
+  success: false;
+  error: string;
+  code?:
+    | "DUPLICATE_URL"
+    | "MISSING_URL"
+    | "VALIDATION"
+    | "AI_ERROR"
+    | "SYSTEM_ERROR";
+  errorKind?: "ai" | "system";
+  errorCode?: string;
+  detail?: string;
+  logId?: string;
+  existingJobId?: number;
+  existingCargo?: string;
+  existingEmpresa?: string;
+  fieldErrors?: {
+    url?: string;
+    texto?: string;
+  };
+};
+
+export type ExtractJobResult =
+  | { success: true; draft: JobExtractionDraft }
+  | FailureResult;
 
 export type ProcessJobResult =
   | {
@@ -53,32 +94,9 @@ export type ProcessJobResult =
       experienciaRequerida: string;
       provider: AIProvider;
       model: string;
-      /** True si se actualizó una oferta ya existente (force). */
       reprocessed?: boolean;
     }
-  | {
-      success: false;
-      error: string;
-      code?:
-        | "DUPLICATE_URL"
-        | "MISSING_URL"
-        | "VALIDATION"
-        | "AI_ERROR"
-        | "SYSTEM_ERROR";
-      errorKind?: "ai" | "system";
-      errorCode?: string;
-      /** Detalle técnico para depuración. */
-      detail?: string;
-      /** Id en logs/skilldex.log */
-      logId?: string;
-      existingJobId?: number;
-      existingCargo?: string;
-      existingEmpresa?: string;
-      fieldErrors?: {
-        url?: string;
-        texto?: string;
-      };
-    };
+  | FailureResult;
 
 const EXTRACTION_SYSTEM = `Eres un asistente experto en reclutamiento. Extrae datos estructurados de vacantes de empleo.
 
@@ -255,13 +273,10 @@ async function findExistingJobByUrl(urlOriginal: string) {
   );
 }
 
-/**
- * Extrae requisitos de una vacante con IA y los persiste en SQLite.
- * La URL es obligatoria para evitar duplicar la misma oferta e inflar frecuencias.
- */
-export async function processJob(
-  input: ProcessJobInput,
-): Promise<ProcessJobResult> {
+function validateProcessInput(input: ProcessJobInput): {
+  textoVacante: string;
+  urlOriginal: string;
+} | FailureResult {
   const textoVacante = input.textoVacante?.trim() ?? "";
   const rawUrl = input.urlOriginal?.trim() ?? "";
   const fieldErrors: { url?: string; texto?: string } = {};
@@ -294,6 +309,25 @@ export async function processJob(
     };
   }
 
+  return { textoVacante, urlOriginal };
+}
+
+/**
+ * Extrae la vacante con IA y devuelve un borrador (sin persistir).
+ */
+export async function extractJobDraft(
+  input: ProcessJobInput,
+): Promise<ExtractJobResult> {
+  const validated = validateProcessInput(input);
+  if ("success" in validated && validated.success === false) {
+    return validated;
+  }
+
+  const { textoVacante, urlOriginal } = validated as {
+    textoVacante: string;
+    urlOriginal: string;
+  };
+
   const existingJob = await findExistingJobByUrl(urlOriginal);
 
   if (existingJob && !input.force) {
@@ -324,95 +358,35 @@ export async function processJob(
     });
 
     const habilidades = uniqueHabilidades(object.habilidades);
-    const cargo = object.cargo.trim() || "Sin cargo";
-    const empresa = object.empresa.trim() || "Desconocida";
-    const reprocessed = Boolean(existingJob && input.force);
-
-    const jobId = await db.transaction(async (tx) => {
-      let id: number;
-
-      if (existingJob && input.force) {
-        await tx
-          .update(jobs)
-          .set({
-            cargo,
-            empresa,
-            urlOriginal,
-            textoVacante,
-          })
-          .where(eq(jobs.id, existingJob.id));
-        id = existingJob.id;
-
-        await upsertHabilidadesForJob(tx, id, habilidades, {
-          incrementExistingLinks: false,
-        });
-      } else {
-        const [job] = await tx
-          .insert(jobs)
-          .values({
-            userId: LOCAL_USER_ID,
-            cargo,
-            empresa,
-            urlOriginal,
-            textoVacante,
-            estadoPostulacion: "Por postular",
-          })
-          .returning({ id: jobs.id });
-
-        if (!job) {
-          throw new Error("No se pudo crear el registro de la vacante.");
-        }
-        id = job.id;
-
-        await upsertHabilidadesForJob(tx, id, habilidades, {
-          incrementExistingLinks: true,
-        });
-      }
-
-      return id;
+    const existingSkills = await db.query.skillsTracker.findMany({
+      where: eq(skillsTracker.userId, LOCAL_USER_ID),
+      columns: { nombreHabilidad: true },
     });
-
-    try {
-      revalidatePath("/");
-    } catch {
-      // Fuera de un request Next.js (p. ej. scripts/smoke) no hay store de render.
-    }
+    const existingSkillNames = existingSkills.map((s) =>
+      s.nombreHabilidad.toLowerCase(),
+    );
 
     return {
       success: true,
-      jobId,
-      cargo,
-      empresa,
-      habilidades,
-      experienciaRequerida: object.experienciaRequerida,
-      provider,
-      model: modelId,
-      reprocessed,
+      draft: {
+        cargo: object.cargo.trim() || "Sin cargo",
+        empresa: object.empresa.trim() || "Desconocida",
+        experienciaRequerida: object.experienciaRequerida,
+        habilidades,
+        textoVacante,
+        urlOriginal,
+        provider,
+        model: modelId,
+        force: Boolean(input.force),
+        existingJobId: existingJob?.id,
+        existingSkillNames,
+      },
     };
   } catch (error) {
-    if (
-      error instanceof Error &&
-      /UNIQUE constraint failed.*url/i.test(error.message)
-    ) {
-      await logSystem("warn", "processJob", "Duplicado por constraint UNIQUE", {
-        error,
-        meta: { urlOriginal, provider, model: modelId },
-      });
-      return {
-        success: false,
-        code: "DUPLICATE_URL",
-        error:
-          "Esta URL de oferta ya está registrada. Puedes descartar o agregar de todos modos.",
-        fieldErrors: {
-          url: "Esta URL ya está asociada a otra vacante en tu tablero.",
-        },
-      };
-    }
-
     const classified = classifyProcessError(error);
     const entry = await logSystem(
       "error",
-      "processJob",
+      "extractJobDraft",
       classified.userMessage,
       {
         error,
@@ -438,4 +412,191 @@ export async function processJob(
       logId: entry.id,
     };
   }
+}
+
+/**
+ * Persiste un borrador confirmado, solo con las habilidades seleccionadas.
+ */
+export async function confirmJobDraft(input: {
+  draft: JobExtractionDraft;
+  selectedHabilidades: ProcessJobHabilidad[];
+}): Promise<ProcessJobResult> {
+  const { draft } = input;
+  const selected = uniqueHabilidades(
+    input.selectedHabilidades.map((h) => ({
+      nombre: h.nombre,
+      tipo: h.tipo,
+      exigencia: h.exigencia,
+    })),
+  );
+
+  if (selected.length === 0) {
+    return {
+      success: false,
+      code: "VALIDATION",
+      error: "Selecciona al menos una habilidad para guardar la vacante.",
+    };
+  }
+
+  const urlOriginal = normalizeJobUrl(draft.urlOriginal);
+  if (!urlOriginal) {
+    return {
+      success: false,
+      code: "MISSING_URL",
+      error: "La URL de la oferta no es válida.",
+    };
+  }
+
+  const existingJob =
+    draft.existingJobId != null
+      ? await db.query.jobs.findFirst({
+          where: and(
+            eq(jobs.id, draft.existingJobId),
+            eq(jobs.userId, LOCAL_USER_ID),
+          ),
+        })
+      : await findExistingJobByUrl(urlOriginal);
+
+  if (existingJob && !draft.force) {
+    return {
+      success: false,
+      code: "DUPLICATE_URL",
+      existingJobId: existingJob.id,
+      existingCargo: existingJob.cargo,
+      existingEmpresa: existingJob.empresa,
+      error: `Esta vacante ya está registrada: «${existingJob.cargo}» en ${existingJob.empresa}.`,
+    };
+  }
+
+  const cargo = draft.cargo.trim() || "Sin cargo";
+  const empresa = draft.empresa.trim() || "Desconocida";
+  const textoVacante = draft.textoVacante.trim();
+  const reprocessed = Boolean(existingJob && draft.force);
+
+  try {
+    const jobId = await db.transaction(async (tx) => {
+      let id: number;
+
+      if (existingJob && draft.force) {
+        await tx
+          .update(jobs)
+          .set({
+            cargo,
+            empresa,
+            urlOriginal,
+            textoVacante,
+          })
+          .where(eq(jobs.id, existingJob.id));
+        id = existingJob.id;
+
+        await upsertHabilidadesForJob(tx, id, selected, {
+          incrementExistingLinks: false,
+        });
+      } else {
+        const [job] = await tx
+          .insert(jobs)
+          .values({
+            userId: LOCAL_USER_ID,
+            cargo,
+            empresa,
+            urlOriginal,
+            textoVacante,
+            estadoPostulacion: "Por postular",
+          })
+          .returning({ id: jobs.id });
+
+        if (!job) {
+          throw new Error("No se pudo crear el registro de la vacante.");
+        }
+        id = job.id;
+
+        await upsertHabilidadesForJob(tx, id, selected, {
+          incrementExistingLinks: true,
+        });
+      }
+
+      return id;
+    });
+
+    try {
+      revalidatePath("/");
+    } catch {
+      // Fuera de un request Next.js (p. ej. scripts/smoke) no hay store de render.
+    }
+
+    return {
+      success: true,
+      jobId,
+      cargo,
+      empresa,
+      habilidades: selected,
+      experienciaRequerida: draft.experienciaRequerida,
+      provider: draft.provider,
+      model: draft.model,
+      reprocessed,
+    };
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      /UNIQUE constraint failed.*url/i.test(error.message)
+    ) {
+      await logSystem("warn", "confirmJobDraft", "Duplicado por constraint UNIQUE", {
+        error,
+        meta: { urlOriginal, provider: draft.provider, model: draft.model },
+      });
+      return {
+        success: false,
+        code: "DUPLICATE_URL",
+        error:
+          "Esta URL de oferta ya está registrada. Puedes descartar o agregar de todos modos.",
+        fieldErrors: {
+          url: "Esta URL ya está asociada a otra vacante en tu tablero.",
+        },
+      };
+    }
+
+    const classified = classifyProcessError(error);
+    const entry = await logSystem(
+      "error",
+      "confirmJobDraft",
+      classified.userMessage,
+      {
+        error,
+        detail: classified.detail,
+        meta: {
+          provider: draft.provider,
+          model: draft.model,
+          errorKind: classified.kind,
+          errorCode: classified.code,
+          urlOriginal,
+          force: draft.force,
+        },
+      },
+    );
+
+    return {
+      success: false,
+      code: classified.kind === "ai" ? "AI_ERROR" : "SYSTEM_ERROR",
+      errorKind: classified.kind,
+      errorCode: classified.code,
+      error: classified.userMessage,
+      detail: classified.detail,
+      logId: entry.id,
+    };
+  }
+}
+
+/**
+ * Compatibilidad: extrae + confirma todas las habilidades (scripts/smoke).
+ */
+export async function processJob(
+  input: ProcessJobInput,
+): Promise<ProcessJobResult> {
+  const extracted = await extractJobDraft(input);
+  if (!extracted.success) return extracted;
+
+  return confirmJobDraft({
+    draft: extracted.draft,
+    selectedHabilidades: extracted.draft.habilidades,
+  });
 }
