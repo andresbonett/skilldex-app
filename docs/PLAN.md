@@ -15,7 +15,7 @@ El trabajo se ejecuta por fases, deteniéndose tras cada una para aprobación an
 |------|--------|
 | 1. Setup + DB (Drizzle + SQLite) | Completada |
 | 2. Motor de extracción IA multi-modelo | Completada |
-| 3. Dashboard (Kanban + lista de habilidades) | Pendiente |
+| 3. Dashboard (Kanban + lista de habilidades) | Completada |
 | 4. Alertas y utilidades de CV | Pendiente |
 
 ---

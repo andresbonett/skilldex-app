@@ -2,6 +2,7 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import { generateObject } from "ai";
+import { revalidatePath } from "next/cache";
 
 import { db } from "@/db";
 import { jobSkillsRelation, jobs, skillsTracker } from "@/db/schema";
@@ -13,6 +14,7 @@ import {
 } from "@/lib/ai/models";
 import { jobExtractionSchema } from "@/lib/ai/schema";
 import { LOCAL_USER_ID } from "@/lib/constants";
+import { normalizeJobUrl } from "@/lib/job-url";
 
 export type ProcessJobInput = {
   textoVacante: string;
@@ -36,6 +38,8 @@ export type ProcessJobResult =
   | {
       success: false;
       error: string;
+      code?: "DUPLICATE_URL" | "MISSING_URL";
+      existingJobId?: number;
     };
 
 function normalizeSkillName(name: string): string {
@@ -60,6 +64,7 @@ function uniqueSkills(skills: string[]): string[] {
 
 /**
  * Extrae requisitos de una vacante con IA y los persiste en SQLite.
+ * La URL es obligatoria para evitar duplicar la misma oferta e inflar frecuencias.
  */
 export async function processJob(
   input: ProcessJobInput,
@@ -67,6 +72,32 @@ export async function processJob(
   const textoVacante = input.textoVacante?.trim();
   if (!textoVacante) {
     return { success: false, error: "El texto de la vacante es obligatorio." };
+  }
+
+  const urlOriginal = normalizeJobUrl(input.urlOriginal);
+  if (!urlOriginal) {
+    return {
+      success: false,
+      code: "MISSING_URL",
+      error:
+        "La URL de la oferta es obligatoria para evitar duplicados de la misma vacante.",
+    };
+  }
+
+  const existingByUrl = await db.query.jobs.findFirst({
+    where: and(
+      eq(jobs.userId, LOCAL_USER_ID),
+      eq(jobs.urlOriginal, urlOriginal),
+    ),
+  });
+
+  if (existingByUrl) {
+    return {
+      success: false,
+      code: "DUPLICATE_URL",
+      existingJobId: existingByUrl.id,
+      error: `Esta oferta ya está registrada: «${existingByUrl.cargo}» en ${existingByUrl.empresa}. No se volvió a contar.`,
+    };
   }
 
   const provider = input.provider ?? DEFAULT_PROVIDER;
@@ -93,7 +124,7 @@ export async function processJob(
           userId: LOCAL_USER_ID,
           cargo: object.cargo.trim() || "Sin cargo",
           empresa: object.empresa.trim() || "Desconocida",
-          urlOriginal: input.urlOriginal?.trim() || null,
+          urlOriginal,
           textoVacante,
           estadoPostulacion: "Por postular",
         })
@@ -126,7 +157,8 @@ export async function processJob(
               userId: LOCAL_USER_ID,
               nombreHabilidad,
               tipo: "tecnica",
-              completada: false,
+              estado: "pendiente",
+              nivelDominio: "basico",
               frecuencia: 1,
             })
             .returning({ id: skillsTracker.id });
@@ -146,6 +178,8 @@ export async function processJob(
       return job.id;
     });
 
+    revalidatePath("/");
+
     return {
       success: true,
       jobId,
@@ -159,8 +193,20 @@ export async function processJob(
     };
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Error desconocido al procesar la vacante.";
+      error instanceof Error
+        ? error.message
+        : "Error desconocido al procesar la vacante.";
     console.error("[processJob]", message);
+
+    if (/UNIQUE constraint failed.*url/i.test(message)) {
+      return {
+        success: false,
+        code: "DUPLICATE_URL",
+        error:
+          "Esta URL de oferta ya está registrada. No se duplicó ni se incrementaron habilidades.",
+      };
+    }
+
     return { success: false, error: message };
   }
 }

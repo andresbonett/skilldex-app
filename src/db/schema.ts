@@ -25,22 +25,54 @@ export const tipoHabilidadValues = [
 
 export type TipoHabilidad = (typeof tipoHabilidadValues)[number];
 
-export const jobs = sqliteTable("jobs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: text("user_id").notNull(),
-  cargo: text("cargo").notNull(),
-  empresa: text("empresa").notNull(),
-  urlOriginal: text("url_original"),
-  textoVacante: text("texto_vacante").notNull(),
-  estadoPostulacion: text("estado_postulacion", {
-    enum: estadoPostulacionValues,
-  })
-    .notNull()
-    .default("Por postular"),
-  fechaCreacion: integer("fecha_creacion", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+export const estadoHabilidadValues = [
+  "pendiente",
+  "en_progreso",
+  "completada",
+  "archivada",
+] as const;
+
+export type EstadoHabilidad = (typeof estadoHabilidadValues)[number];
+
+/** Estados editables en el flujo diario (archivar tiene acción aparte). */
+export const estadoHabilidadActivosValues = [
+  "pendiente",
+  "en_progreso",
+  "completada",
+] as const;
+
+export const nivelDominioValues = [
+  "basico",
+  "medio",
+  "avanzado",
+  "experto",
+] as const;
+
+export type NivelDominio = (typeof nivelDominioValues)[number];
+
+export const jobs = sqliteTable(
+  "jobs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id").notNull(),
+    cargo: text("cargo").notNull(),
+    empresa: text("empresa").notNull(),
+    urlOriginal: text("url_original"),
+    textoVacante: text("texto_vacante").notNull(),
+    estadoPostulacion: text("estado_postulacion", {
+      enum: estadoPostulacionValues,
+    })
+      .notNull()
+      .default("Por postular"),
+    fechaCreacion: integer("fecha_creacion", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    /** Evita vacantes duplicadas cuando hay URL (NULLs no colisionan en SQLite). */
+    uniqueIndex("jobs_user_url_idx").on(table.userId, table.urlOriginal),
+  ],
+);
 
 export const skillsTracker = sqliteTable(
   "skills_tracker",
@@ -49,9 +81,12 @@ export const skillsTracker = sqliteTable(
     userId: text("user_id").notNull(),
     nombreHabilidad: text("nombre_habilidad").notNull(),
     tipo: text("tipo", { enum: tipoHabilidadValues }).notNull().default("tecnica"),
-    completada: integer("completada", { mode: "boolean" })
+    estado: text("estado", { enum: estadoHabilidadValues })
       .notNull()
-      .default(false),
+      .default("pendiente"),
+    nivelDominio: text("nivel_dominio", { enum: nivelDominioValues })
+      .notNull()
+      .default("basico"),
     frecuencia: integer("frecuencia").notNull().default(1),
   },
   (table) => [

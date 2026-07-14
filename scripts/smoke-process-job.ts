@@ -27,6 +27,7 @@ async function main() {
   console.log("→ Llamando processJob (provider=google)...");
   const result = await processJob({
     textoVacante: SAMPLE,
+    urlOriginal: `https://example.com/jobs/acme-senior-fullstack-${Date.now()}`,
     provider: "google",
   });
 
