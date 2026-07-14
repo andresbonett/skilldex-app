@@ -23,7 +23,11 @@ export async function getJobsForUser() {
 export async function getSkillsForUser() {
   return db.query.skillsTracker.findMany({
     where: eq(skillsTracker.userId, LOCAL_USER_ID),
-    orderBy: [desc(skillsTracker.frecuencia), asc(skillsTracker.nombreHabilidad)],
+    orderBy: [
+      desc(skillsTracker.scorePrioridad),
+      desc(skillsTracker.frecuencia),
+      asc(skillsTracker.nombreHabilidad),
+    ],
   });
 }
 

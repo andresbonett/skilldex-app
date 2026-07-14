@@ -34,6 +34,7 @@ import {
 import {
   ESTADO_HABILIDAD_LABELS,
   NIVEL_DOMINIO_LABELS,
+  TIPO_HABILIDAD_LABELS,
 } from "@/lib/dashboard";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +45,7 @@ export type SkillItem = {
   estado: EstadoHabilidad;
   nivelDominio: NivelDominio;
   frecuencia: number;
+  scorePrioridad: number;
 };
 
 type SkillUpdate =
@@ -177,12 +179,30 @@ function SkillActions({
   );
 }
 
-export function SkillsTracker({ skills }: { skills: SkillItem[] }) {
+export function SkillsTracker({
+  skills,
+  tipos,
+  showStudyPriority = true,
+  emptyMessage = "No hay habilidades en este filtro.",
+}: {
+  skills: SkillItem[];
+  /** Si se define, solo muestra esos tipos (tabla independiente). */
+  tipos?: string[];
+  /** En técnicas priorizamos score; en blandas/requisitos es opcional. */
+  showStudyPriority?: boolean;
+  emptyMessage?: string;
+}) {
   const [view, setView] = useState<ViewMode>("table");
   const [filter, setFilter] = useState<FilterEstado>("activas");
   const [isPending, startTransition] = useTransition();
+
+  const scopedSkills = useMemo(() => {
+    if (!tipos?.length) return skills;
+    return skills.filter((s) => tipos.includes(s.tipo));
+  }, [skills, tipos]);
+
   const [optimisticSkills, setOptimisticSkills] = useOptimistic(
-    skills,
+    scopedSkills,
     (current, update: SkillUpdate) => {
       if (update.type === "remove") {
         return current.filter((s) => s.id !== update.id);
@@ -197,6 +217,8 @@ export function SkillsTracker({ skills }: { skills: SkillItem[] }) {
     },
   );
 
+  const hideTipoColumn = Boolean(tipos && tipos.length === 1);
+
   const filtered = useMemo(() => {
     let list = optimisticSkills;
     if (filter === "activas") {
@@ -205,12 +227,20 @@ export function SkillsTracker({ skills }: { skills: SkillItem[] }) {
       list = list.filter((s) => s.estado === filter);
     }
 
-    return [...list].sort(
-      (a, b) =>
+    return [...list].sort((a, b) => {
+      if (showStudyPriority) {
+        return (
+          b.scorePrioridad - a.scorePrioridad ||
+          b.frecuencia - a.frecuencia ||
+          a.nombreHabilidad.localeCompare(b.nombreHabilidad)
+        );
+      }
+      return (
         b.frecuencia - a.frecuencia ||
-        a.nombreHabilidad.localeCompare(b.nombreHabilidad),
-    );
-  }, [optimisticSkills, filter]);
+        a.nombreHabilidad.localeCompare(b.nombreHabilidad)
+      );
+    });
+  }, [optimisticSkills, filter, showStudyPriority]);
 
   const counts = useMemo(() => {
     return {
@@ -329,15 +359,25 @@ export function SkillsTracker({ skills }: { skills: SkillItem[] }) {
 
       {filtered.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">
-          No hay habilidades en este filtro.
+          {emptyMessage}
         </p>
       ) : view === "table" ? (
         <div className="overflow-x-auto rounded-xl border border-border/70 bg-white/70">
-          <table className="w-full min-w-[720px] border-collapse text-left text-xs">
+          <table
+            className={cn(
+              "w-full border-collapse text-left text-xs",
+              showStudyPriority ? "min-w-[760px]" : "min-w-[640px]",
+            )}
+          >
             <thead className="border-b border-border/70 bg-muted/40 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-2.5 py-2 font-medium">Habilidad</th>
-                <th className="px-2.5 py-2 font-medium">Tipo</th>
+                {!hideTipoColumn ? (
+                  <th className="px-2.5 py-2 font-medium">Tipo</th>
+                ) : null}
+                {showStudyPriority ? (
+                  <th className="px-2.5 py-2 font-medium">Prioridad</th>
+                ) : null}
                 <th className="px-2.5 py-2 font-medium">Freq.</th>
                 <th className="px-2.5 py-2 font-medium">Estado</th>
                 <th className="px-2.5 py-2 font-medium">Nivel</th>
@@ -356,9 +396,23 @@ export function SkillsTracker({ skills }: { skills: SkillItem[] }) {
                   <td className="max-w-[220px] truncate px-2.5 py-1.5 text-sm font-medium text-foreground">
                     {skill.nombreHabilidad}
                   </td>
-                  <td className="px-2.5 py-1.5 text-muted-foreground">
-                    {skill.tipo}
-                  </td>
+                  {!hideTipoColumn ? (
+                    <td className="px-2.5 py-1.5">
+                      <Badge
+                        variant="outline"
+                        className="font-normal capitalize"
+                      >
+                        {TIPO_HABILIDAD_LABELS[
+                          skill.tipo as keyof typeof TIPO_HABILIDAD_LABELS
+                        ] ?? skill.tipo}
+                      </Badge>
+                    </td>
+                  ) : null}
+                  {showStudyPriority ? (
+                    <td className="px-2.5 py-1.5 tabular-nums text-muted-foreground">
+                      {skill.scorePrioridad}
+                    </td>
+                  ) : null}
                   <td className="px-2.5 py-1.5 tabular-nums text-muted-foreground">
                     {skill.frecuencia}×
                   </td>
@@ -429,12 +483,24 @@ export function SkillsTracker({ skills }: { skills: SkillItem[] }) {
                 />
               </div>
               <div className="flex flex-wrap gap-1">
-                <Badge
-                  variant="outline"
-                  className="h-5 border-current/20 bg-white/50 px-1.5 text-[0.65rem] font-normal"
-                >
-                  {skill.tipo}
-                </Badge>
+                {!hideTipoColumn ? (
+                  <Badge
+                    variant="outline"
+                    className="h-5 border-current/20 bg-white/50 px-1.5 text-[0.65rem] font-normal"
+                  >
+                    {TIPO_HABILIDAD_LABELS[
+                      skill.tipo as keyof typeof TIPO_HABILIDAD_LABELS
+                    ] ?? skill.tipo}
+                  </Badge>
+                ) : null}
+                {showStudyPriority ? (
+                  <Badge
+                    variant="outline"
+                    className="h-5 border-current/20 bg-white/50 px-1.5 text-[0.65rem] font-normal"
+                  >
+                    Prio {skill.scorePrioridad}
+                  </Badge>
+                ) : null}
                 <Badge
                   variant="outline"
                   className="h-5 border-current/20 bg-white/50 px-1.5 text-[0.65rem] font-normal"

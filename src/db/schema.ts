@@ -50,6 +50,17 @@ export const nivelDominioValues = [
 
 export type NivelDominio = (typeof nivelDominioValues)[number];
 
+/** Exigencia de la habilidad respecto a una oferta concreta. */
+export const exigenciaHabilidadValues = ["requerida", "valorada"] as const;
+
+export type ExigenciaHabilidad = (typeof exigenciaHabilidadValues)[number];
+
+/** Peso al acumular prioridad de mercado por oferta. */
+export const EXIGENCIA_SCORE_WEIGHT: Record<ExigenciaHabilidad, number> = {
+  requerida: 2,
+  valorada: 1,
+};
+
 export const jobs = sqliteTable(
   "jobs",
   {
@@ -87,7 +98,10 @@ export const skillsTracker = sqliteTable(
     nivelDominio: text("nivel_dominio", { enum: nivelDominioValues })
       .notNull()
       .default("basico"),
+    /** Cuántas ofertas mencionan esta habilidad. */
     frecuencia: integer("frecuencia").notNull().default(1),
+    /** Prioridad ponderada: requerida +2, valorada +1 por oferta. */
+    scorePrioridad: integer("score_prioridad").notNull().default(1),
   },
   (table) => [
     uniqueIndex("skills_tracker_user_nombre_idx").on(
@@ -106,6 +120,9 @@ export const jobSkillsRelation = sqliteTable(
     skillId: integer("skill_id")
       .notNull()
       .references(() => skillsTracker.id, { onDelete: "cascade" }),
+    exigencia: text("exigencia", { enum: exigenciaHabilidadValues })
+      .notNull()
+      .default("requerida"),
   },
   (table) => [primaryKey({ columns: [table.jobId, table.skillId] })],
 );
