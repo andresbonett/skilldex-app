@@ -115,6 +115,12 @@ export function CvShell({
   const [matches, setMatches] = useState(initialMatches);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [errorMeta, setErrorMeta] = useState<{
+    code?: string;
+    logId?: string;
+  } | null>(null);
+  const [showErrorDetail, setShowErrorDetail] = useState(false);
   const [reviewNotes, setReviewNotes] = useState<string | null>(null);
   const [metaJson, setMetaJson] = useState(() =>
     JSON.stringify(
@@ -137,6 +143,29 @@ export function CvShell({
   const [model, setModel] = useState(DEFAULT_MODELS[DEFAULT_PROVIDER]);
   const [pending, startTransition] = useTransition();
   const [pdfPending, setPdfPending] = useState(false);
+
+  function clearFeedback() {
+    setError(null);
+    setErrorDetail(null);
+    setErrorMeta(null);
+    setShowErrorDetail(false);
+    setMessage(null);
+  }
+
+  function showActionError(
+    message: string,
+    extras?: { detail?: string; code?: string; logId?: string },
+  ) {
+    setMessage(null);
+    setError(message);
+    setErrorDetail(extras?.detail ?? null);
+    setErrorMeta(
+      extras?.code || extras?.logId
+        ? { code: extras.code, logId: extras.logId }
+        : null,
+    );
+    setShowErrorDetail(false);
+  }
 
   const modelOptions = useMemo(() => {
     const defaults = Object.values(DEFAULT_MODELS);
@@ -223,7 +252,7 @@ export function CvShell({
       }));
       return true;
     } catch {
-      setError("El bloque JSON de metadatos no es válido.");
+      showActionError("El bloque JSON de metadatos no es válido.");
       return false;
     }
   }
@@ -271,13 +300,16 @@ export function CvShell({
   }
 
   function handleSave() {
-    setError(null);
-    setMessage(null);
+    clearFeedback();
     withMetaApplied((doc) => {
       startTransition(async () => {
         const result = await saveResume(doc);
         if (!result.success) {
-          setError(result.error);
+          showActionError(result.error, {
+            detail: result.detail,
+            code: result.code,
+            logId: result.logId,
+          });
           return;
         }
         syncFromBundle(result.resume);
@@ -325,20 +357,23 @@ export function CvShell({
       URL.revokeObjectURL(url);
       void blob;
     } catch {
-      setError("No se pudo exportar: JSON de metadatos inválido.");
+      showActionError("No se pudo exportar: JSON de metadatos inválido.");
     }
   }
 
   function handleImportFile(file: File) {
-    setError(null);
-    setMessage(null);
+    clearFeedback();
     const reader = new FileReader();
     reader.onload = () => {
       const text = String(reader.result ?? "");
       startTransition(async () => {
         const result = await importResumeJson(text);
         if (!result.success) {
-          setError(result.error);
+          showActionError(result.error, {
+            detail: result.detail,
+            code: result.code,
+            logId: result.logId,
+          });
           return;
         }
         syncFromBundle(result.resume);
@@ -350,8 +385,7 @@ export function CvShell({
   }
 
   function handleReview() {
-    setError(null);
-    setMessage(null);
+    clearFeedback();
     setReviewNotes(null);
     withMetaApplied((doc) => {
       startTransition(async () => {
@@ -361,7 +395,11 @@ export function CvShell({
           data: doc,
         });
         if (!result.success) {
-          setError(result.error);
+          showActionError(result.error, {
+            detail: result.detail,
+            code: result.code,
+            logId: result.logId,
+          });
           return;
         }
         syncFromBundle(result.resume);
@@ -382,8 +420,7 @@ export function CvShell({
   }
 
   function handleOptimize() {
-    setError(null);
-    setMessage(null);
+    clearFeedback();
     withMetaApplied((doc) => {
       startTransition(async () => {
         const result = await optimizeResumeForMarketSkills({
@@ -392,7 +429,11 @@ export function CvShell({
           data: doc,
         });
         if (!result.success) {
-          setError(result.error);
+          showActionError(result.error, {
+            detail: result.detail,
+            code: result.code,
+            logId: result.logId,
+          });
           return;
         }
         syncFromBundle(result.resume);
@@ -405,7 +446,7 @@ export function CvShell({
 
   async function handlePdf() {
     setPdfPending(true);
-    setError(null);
+    clearFeedback();
     try {
       if (!applyMetaJson()) {
         setPdfPending(false);
@@ -434,7 +475,7 @@ export function CvShell({
       await downloadCvPdf(merged);
       setMessage("PDF generado.");
     } catch {
-      setError("No se pudo generar el PDF.");
+      showActionError("No se pudo generar el PDF.");
     } finally {
       setPdfPending(false);
     }
@@ -576,7 +617,37 @@ export function CvShell({
             <p className="text-xs text-teal-800">{message}</p>
           ) : null}
           {error ? (
-            <p className="text-xs text-destructive">{error}</p>
+            <div
+              className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+              role="alert"
+            >
+              <p className="font-medium">{error}</p>
+              {(errorMeta?.code || errorMeta?.logId) && (
+                <p className="mt-1 opacity-70">
+                  {errorMeta.code ? `Código: ${errorMeta.code}` : null}
+                  {errorMeta.code && errorMeta.logId ? " · " : null}
+                  {errorMeta.logId ? `Log: ${errorMeta.logId}` : null}
+                </p>
+              )}
+              {errorDetail ? (
+                <div className="mt-1.5">
+                  <button
+                    type="button"
+                    className="font-medium underline-offset-2 hover:underline"
+                    onClick={() => setShowErrorDetail((v) => !v)}
+                  >
+                    {showErrorDetail
+                      ? "Ocultar detalle técnico"
+                      : "Ver detalle técnico"}
+                  </button>
+                  {showErrorDetail ? (
+                    <pre className="mt-1.5 max-h-36 overflow-auto rounded-md bg-black/5 p-2 text-[0.65rem] leading-relaxed whitespace-pre-wrap break-words text-foreground/80">
+                      {errorDetail}
+                    </pre>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </header>
@@ -913,11 +984,16 @@ export function CvShell({
           <Panel title="Formación">
             <Textarea
               rows={4}
+              placeholder="Título | Institución | Inicio | Fin | Detalle"
               value={data.education
                 .map((e) =>
-                  [e.title, e.institution, e.detail || e.type]
-                    .filter(Boolean)
-                    .join(" | "),
+                  [
+                    e.title,
+                    e.institution,
+                    e.start || "",
+                    e.end || "",
+                    e.detail || e.type || "",
+                  ].join(" | "),
                 )
                 .join("\n")}
               onChange={(e) => {
@@ -926,13 +1002,26 @@ export function CvShell({
                   .map((line) => line.trim())
                   .filter(Boolean)
                   .map((line) => {
-                    const [title, institution, detail] = line
-                      .split("|")
-                      .map((s) => s.trim());
+                    const parts = line.split("|").map((s) => s.trim());
+                    const [title, institution, a, b, c] = parts;
+                    // Compat: "Título | Institución | Detalle"
+                    if (parts.length <= 3) {
+                      return {
+                        title: title || "Título",
+                        institution: institution || "Institución",
+                        start: "",
+                        end: "",
+                        detail: a || "",
+                        type: "",
+                        status: "",
+                      };
+                    }
                     return {
                       title: title || "Título",
                       institution: institution || "Institución",
-                      detail: detail || "",
+                      start: a || "",
+                      end: b || "",
+                      detail: c || "",
                       type: "",
                       status: "",
                     };

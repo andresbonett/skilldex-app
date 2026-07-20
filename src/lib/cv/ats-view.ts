@@ -39,6 +39,8 @@ export type AtsView = {
   education: {
     title: string;
     institution: string;
+    start: string;
+    end: string;
     detail: string;
   }[];
   languages: {
@@ -93,6 +95,8 @@ export function toAtsView(doc: CvDocument): AtsView {
     education: doc.education.map((e) => ({
       title: e.title,
       institution: e.institution,
+      start: e.start ?? "",
+      end: e.end ?? "",
       detail: [e.type, e.status, e.detail].filter(Boolean).join(" · "),
     })),
     languages: doc.languages.map((l) => ({

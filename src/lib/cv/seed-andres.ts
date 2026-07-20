@@ -369,6 +369,8 @@ export const ANDRES_CV_SEED: CvDocument = {
       title:
         "Tecnólogo en Administración del Ensamble y Mantenimiento de Computadores",
       institution: "Servicio Nacional de Aprendizaje (SENA)",
+      start: "",
+      end: "",
       type: "Tecnólogo",
       status: "Completado",
       detail: "",
@@ -376,6 +378,8 @@ export const ANDRES_CV_SEED: CvDocument = {
     {
       title: "Formación en Desarrollo Web y Arquitectura Frontend",
       institution: "Platzi",
+      start: "",
+      end: "Actualidad",
       type: "Cursos y formación complementaria",
       status: "",
       detail:

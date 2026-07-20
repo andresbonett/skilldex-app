@@ -37,6 +37,7 @@ import {
   serializeCvDocument,
 } from "@/lib/cv/schema";
 import { ANDRES_CV_SEED } from "@/lib/cv/seed-andres";
+import { logSystem } from "@/lib/logger";
 
 export type ResumeVersionSummary = {
   id: number;
@@ -60,7 +61,33 @@ export type ActionErr = {
   success: false;
   error: string;
   code?: string;
+  detail?: string;
+  logId?: string;
 };
+
+async function failFromError(
+  scope: string,
+  error: unknown,
+  meta?: Record<string, unknown>,
+): Promise<ActionErr> {
+  const classified = classifyProcessError(error);
+  const entry = await logSystem("error", scope, classified.userMessage, {
+    error,
+    detail: classified.detail,
+    meta: {
+      ...meta,
+      errorKind: classified.kind,
+      errorCode: classified.code,
+    },
+  });
+  return {
+    success: false,
+    error: classified.userMessage,
+    code: classified.code,
+    detail: classified.detail,
+    logId: entry.id,
+  };
+}
 
 async function countVersions(resumeId: number): Promise<number> {
   const rows = await db.query.resumeVersions.findMany({
@@ -240,8 +267,7 @@ export async function saveResume(
     revalidatePath("/");
     return { success: true, resume: await getOrCreateResume() };
   } catch (error) {
-    const classified = classifyProcessError(error);
-    return { success: false, error: classified.userMessage, code: classified.code };
+    return failFromError("saveResume", error);
   }
 }
 
@@ -282,8 +308,7 @@ export async function importResumeJson(
     revalidatePath("/");
     return { success: true, resume: await getOrCreateResume() };
   } catch (error) {
-    const classified = classifyProcessError(error);
-    return { success: false, error: classified.userMessage, code: classified.code };
+    return failFromError("importResumeJson", error);
   }
 }
 
@@ -315,8 +340,7 @@ export async function restoreResumeVersion(
     revalidatePath("/");
     return { success: true, resume: await getOrCreateResume() };
   } catch (error) {
-    const classified = classifyProcessError(error);
-    return { success: false, error: classified.userMessage, code: classified.code };
+    return failFromError("restoreResumeVersion", error, { versionId });
   }
 }
 
@@ -472,8 +496,7 @@ Responde en español.`;
 
     return { success: true, prompt };
   } catch (error) {
-    const classified = classifyProcessError(error);
-    return { success: false, error: classified.userMessage, code: classified.code };
+    return failFromError("buildExternalCvPrompt", error, { jobId });
   }
 }
 
@@ -570,8 +593,10 @@ ${serializeCvDocument(current.data)}`,
       appliedRevision,
     };
   } catch (error) {
-    const classified = classifyProcessError(error);
-    return { success: false, error: classified.userMessage, code: classified.code };
+    return failFromError("reviewResumeWithAI", error, {
+      provider,
+      model: modelId,
+    });
   }
 }
 
@@ -660,7 +685,9 @@ ${serializeCvDocument(current.data)}`,
       resume: await getOrCreateResume(),
     };
   } catch (error) {
-    const classified = classifyProcessError(error);
-    return { success: false, error: classified.userMessage, code: classified.code };
+    return failFromError("optimizeResumeForMarketSkills", error, {
+      provider,
+      model: modelId,
+    });
   }
 }

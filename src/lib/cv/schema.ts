@@ -94,6 +94,8 @@ export const cvFeaturedProjectSchema = z.object({
 export const cvEducationSchema = z.object({
   title: z.string().min(1),
   institution: z.string().min(1),
+  start: z.string().optional().default(""),
+  end: z.string().optional().default(""),
   type: z.string().optional().default(""),
   status: z.string().optional().default(""),
   detail: z.string().optional().default(""),

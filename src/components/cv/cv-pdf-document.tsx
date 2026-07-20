@@ -12,27 +12,30 @@ import {
 import type { CvDocument } from "@/lib/cv/schema";
 import { toAtsView } from "@/lib/cv/ats-view";
 
+const GAP = 8;
+const SECTION_GAP = 14;
+
 const styles = StyleSheet.create({
   page: {
     fontFamily: "Helvetica",
     fontSize: 10.5,
     color: "#1e293b",
-    paddingTop: 56,
-    paddingBottom: 56,
+    paddingTop: 48,
+    paddingBottom: 48,
     paddingHorizontal: 42,
-    lineHeight: 1.5,
+    lineHeight: 1.45,
   },
-  header: { textAlign: "center", marginBottom: 18 },
+  header: { textAlign: "center", marginBottom: SECTION_GAP },
   name: {
     fontSize: 20,
     fontFamily: "Helvetica-Bold",
     color: "#0f172a",
     marginBottom: 4,
   },
-  headline: { fontSize: 13, color: "#475569", marginBottom: 8 },
-  contact: { fontSize: 9.5, color: "#475569", lineHeight: 1.6 },
+  headline: { fontSize: 12, color: "#475569", marginBottom: 6 },
+  contact: { fontSize: 9.5, color: "#475569", lineHeight: 1.45 },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: "Helvetica-Bold",
     color: "#0f172a",
     textTransform: "uppercase",
@@ -40,36 +43,41 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#cbd5e1",
     paddingBottom: 3,
-    marginTop: 14,
-    marginBottom: 8,
+    marginTop: SECTION_GAP,
+    marginBottom: GAP,
   },
-  paragraph: { marginBottom: 8, textAlign: "justify" },
-  skillGroup: { marginBottom: 6 },
+  paragraph: { marginBottom: GAP, textAlign: "justify" },
+  skillGroup: { marginBottom: 4 },
   skillLabel: { fontFamily: "Helvetica-Bold", color: "#0f172a" },
-  jobEntry: { marginBottom: 12 },
-  jobHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 2,
-  },
-  jobTitle: {
+  entry: { marginBottom: GAP },
+  entryTitle: {
     fontSize: 11,
     fontFamily: "Helvetica-Bold",
     color: "#0f172a",
-    flex: 1,
+    marginBottom: 2,
   },
-  jobDate: { fontSize: 10, color: "#0f172a" },
-  jobSub: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
+  entrySub: {
+    fontSize: 10,
     fontStyle: "italic",
     color: "#475569",
-    fontSize: 10,
+    marginBottom: 2,
+  },
+  entryMeta: {
+    fontSize: 9.5,
+    color: "#475569",
+    marginBottom: 4,
   },
   bullet: { marginBottom: 3, paddingLeft: 10, textAlign: "justify" },
   bulletMark: { position: "absolute", left: 0 },
 });
+
+function formatPeriod(start?: string, end?: string) {
+  const s = start?.trim();
+  const e = end?.trim();
+  if (!s && !e) return "";
+  if (s && e) return `${s} – ${e}`;
+  return s || e || "";
+}
 
 function CvPdfDocument({ data }: { data: CvDocument }) {
   const view = toAtsView(data);
@@ -123,39 +131,36 @@ function CvPdfDocument({ data }: { data: CvDocument }) {
         ))}
 
         <Text style={styles.sectionTitle}>Experiencia Profesional</Text>
-        {experience.map((job, idx) => (
-          <View key={`${job.company}-${idx}`} style={styles.jobEntry} wrap={false}>
-            <View style={styles.jobHeader}>
-              <Text style={styles.jobTitle}>{job.title}</Text>
-              <Text style={styles.jobDate}>
-                {job.start} – {job.end}
-              </Text>
-            </View>
-            <View style={styles.jobSub}>
-              <Text>
+        {experience.map((job, idx) => {
+          const period = formatPeriod(job.start, job.end);
+          const meta = [period, job.durationLabel].filter(Boolean).join(" · ");
+          return (
+            <View key={`${job.company}-${idx}`} style={styles.entry}>
+              <Text style={styles.entryTitle}>{job.title}</Text>
+              <Text style={styles.entrySub}>
                 {job.company}
                 {job.location ? ` — ${job.location}` : ""}
               </Text>
-              {job.durationLabel ? <Text>{job.durationLabel}</Text> : null}
+              {meta ? <Text style={styles.entryMeta}>{meta}</Text> : null}
+              {job.summary ? (
+                <Text style={styles.paragraph}>{job.summary}</Text>
+              ) : null}
+              {job.bullets.map((bullet, i) => (
+                <View key={i} style={styles.bullet}>
+                  <Text style={styles.bulletMark}>•</Text>
+                  <Text>{bullet}</Text>
+                </View>
+              ))}
             </View>
-            {job.summary ? (
-              <Text style={styles.paragraph}>{job.summary}</Text>
-            ) : null}
-            {job.bullets.map((bullet, i) => (
-              <View key={i} style={styles.bullet}>
-                <Text style={styles.bulletMark}>•</Text>
-                <Text>{bullet}</Text>
-              </View>
-            ))}
-          </View>
-        ))}
+          );
+        })}
 
         {view.projects.length > 0 ? (
           <>
             <Text style={styles.sectionTitle}>Proyectos Destacados</Text>
             {view.projects.map((p, i) => (
-              <View key={i} style={styles.jobEntry}>
-                <Text style={styles.jobTitle}>
+              <View key={i} style={styles.entry}>
+                <Text style={styles.entryTitle}>
                   {p.name}
                   {p.role ? ` — ${p.role}` : ""}
                 </Text>
@@ -186,24 +191,29 @@ function CvPdfDocument({ data }: { data: CvDocument }) {
         ) : null}
 
         <Text style={styles.sectionTitle}>Formación y Certificaciones</Text>
-        {education.map((ed, i) => (
-          <Text key={i} style={styles.bullet}>
-            <Text style={styles.bulletMark}>•</Text>
-            <Text>
-              {ed.title} — {ed.institution}
-              {ed.detail ? ` (${ed.detail})` : ""}
-            </Text>
-          </Text>
-        ))}
+        {education.map((ed, i) => {
+          const period = formatPeriod(ed.start, ed.end);
+          return (
+            <View key={i} style={styles.entry}>
+              <Text style={styles.entryTitle}>{ed.title}</Text>
+              <Text style={styles.entrySub}>{ed.institution}</Text>
+              {period || ed.detail ? (
+                <Text style={styles.entryMeta}>
+                  {[period, ed.detail].filter(Boolean).join(" · ")}
+                </Text>
+              ) : null}
+            </View>
+          );
+        })}
 
         <Text style={styles.sectionTitle}>Idiomas</Text>
         {languages.map((lang, i) => (
-          <Text key={i} style={styles.bullet}>
+          <View key={i} style={styles.bullet}>
             <Text style={styles.bulletMark}>•</Text>
             <Text>
               {lang.name}: {lang.level}
             </Text>
-          </Text>
+          </View>
         ))}
       </Page>
     </Document>

@@ -35,23 +35,22 @@ export function AtsPreview({ data }: { data: CvDocument }) {
           font-size: 9.5pt; color: #475569; line-height: 1.6;
         }
         .ats-preview h2 {
-          font-size: 12pt; color: #0f172a; text-transform: uppercase;
+          font-size: 11pt; color: #0f172a; text-transform: uppercase;
           letter-spacing: 0.5px; border-bottom: 1px solid #cbd5e1;
-          padding-bottom: 3px; margin: 20px 0 10px 0;
+          padding-bottom: 3px; margin: 14px 0 8px 0;
         }
-        .ats-preview p { margin: 0 0 10px 0; text-align: justify; }
-        .ats-preview .ats-skills-group { margin-bottom: 8px; }
+        .ats-preview p { margin: 0 0 8px 0; text-align: justify; }
+        .ats-preview .ats-skills-group { margin-bottom: 4px; }
         .ats-preview .ats-skills-label { font-weight: bold; color: #0f172a; }
-        .ats-preview .ats-job-entry { margin-bottom: 15px; }
-        .ats-preview .ats-job-header {
-          display: flex; justify-content: space-between; align-items: baseline;
-          font-weight: bold; color: #0f172a; margin-bottom: 2px; gap: 12px;
+        .ats-preview .ats-job-entry { margin-bottom: 10px; }
+        .ats-preview .ats-job-title {
+          font-size: 11pt; font-weight: bold; color: #0f172a; margin: 0 0 2px 0;
         }
-        .ats-preview .ats-job-title { font-size: 11pt; }
-        .ats-preview .ats-job-date { font-size: 10pt; white-space: nowrap; }
         .ats-preview .ats-job-sub {
-          display: flex; justify-content: space-between; align-items: baseline;
-          font-style: italic; color: #475569; font-size: 10pt; margin-bottom: 6px; gap: 12px;
+          font-style: italic; color: #475569; font-size: 10pt; margin: 0 0 2px 0;
+        }
+        .ats-preview .ats-job-meta {
+          font-size: 9.5pt; color: #475569; margin: 0 0 6px 0;
         }
         .ats-preview ul { margin: 0 0 10px 0; padding-left: 20px; }
         .ats-preview li { margin-bottom: 4px; text-align: justify; }
@@ -99,40 +98,37 @@ export function AtsPreview({ data }: { data: CvDocument }) {
       </div>
 
       <h2>Experiencia Profesional</h2>
-      {experience.map((job, idx) => (
-        <div key={`${job.company}-${job.start}-${idx}`} className="ats-job-entry">
-          <div className="ats-job-header">
-            <span className="ats-job-title">{job.title}</span>
-            <span className="ats-job-date">
-              {job.start} – {job.end}
-            </span>
-          </div>
-          <div className="ats-job-sub">
-            <span>
+      {experience.map((job, idx) => {
+        const period = [job.start, job.end].filter(Boolean).join(" – ");
+        const meta = [period, job.durationLabel].filter(Boolean).join(" · ");
+        return (
+          <div key={`${job.company}-${job.start}-${idx}`} className="ats-job-entry">
+            <div className="ats-job-title">{job.title}</div>
+            <div className="ats-job-sub">
               {job.company}
               {job.location ? ` — ${job.location}` : ""}
-            </span>
-            {job.durationLabel ? <span>{job.durationLabel}</span> : null}
+            </div>
+            {meta ? <div className="ats-job-meta">{meta}</div> : null}
+            {job.summary ? <p>{job.summary}</p> : null}
+            {job.bullets.length > 0 ? (
+              <ul>
+                {job.bullets.map((bullet, i) => (
+                  <li key={i}>{bullet}</li>
+                ))}
+              </ul>
+            ) : null}
           </div>
-          {job.summary ? <p>{job.summary}</p> : null}
-          {job.bullets.length > 0 ? (
-            <ul>
-              {job.bullets.map((bullet, i) => (
-                <li key={i}>{bullet}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ))}
+        );
+      })}
 
       {view.projects.length > 0 ? (
         <>
           <h2>Proyectos Destacados</h2>
           {view.projects.map((p, i) => (
             <div key={i} className="ats-job-entry">
-              <div className="ats-job-header">
-                <span className="ats-job-title">{p.name}</span>
-                {p.role ? <span className="ats-job-date">{p.role}</span> : null}
+              <div className="ats-job-title">
+                {p.name}
+                {p.role ? ` — ${p.role}` : ""}
               </div>
               {p.description ? <p>{p.description}</p> : null}
               {p.highlights.length > 0 ? (
@@ -165,14 +161,17 @@ export function AtsPreview({ data }: { data: CvDocument }) {
       ) : null}
 
       <h2>Formación y Certificaciones</h2>
-      <ul>
-        {education.map((ed, i) => (
-          <li key={i}>
-            <strong>{ed.title}</strong> — {ed.institution}
-            {ed.detail ? ` (${ed.detail})` : ""}
-          </li>
-        ))}
-      </ul>
+      {education.map((ed, i) => {
+        const period = [ed.start, ed.end].filter(Boolean).join(" – ");
+        const meta = [period, ed.detail].filter(Boolean).join(" · ");
+        return (
+          <div key={i} className="ats-job-entry">
+            <div className="ats-job-title">{ed.title}</div>
+            <div className="ats-job-sub">{ed.institution}</div>
+            {meta ? <div className="ats-job-meta">{meta}</div> : null}
+          </div>
+        );
+      })}
 
       <h2>Idiomas</h2>
       <ul>

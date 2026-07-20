@@ -4,6 +4,7 @@ import {
   JSONParseError,
   LoadAPIKeyError,
   NoObjectGeneratedError,
+  RetryError,
   TypeValidationError,
 } from "ai";
 
@@ -25,7 +26,7 @@ export type ClassifiedError = {
     | "SYSTEM_UNKNOWN";
   /** Mensaje claro para el usuario. */
   userMessage: string;
-  /** Detalle técnico (mensaje original). */
+  /** Detalle técnico (mensaje original + cuerpo de respuesta si existe). */
   detail: string;
 };
 
@@ -45,15 +46,67 @@ function rawMessage(error: unknown): string {
   return String(error);
 }
 
+function responseBodyOf(error: unknown): string | undefined {
+  if (APICallError.isInstance(error) && typeof error.responseBody === "string") {
+    return error.responseBody;
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "responseBody" in error &&
+    typeof (error as { responseBody?: unknown }).responseBody === "string"
+  ) {
+    return (error as { responseBody: string }).responseBody;
+  }
+  return undefined;
+}
+
+/** Desenvuelve RetryError / cause para clasificar el fallo real del proveedor. */
+function unwrapError(error: unknown): unknown {
+  if (RetryError.isInstance(error)) {
+    return error.lastError ?? error.errors.at(-1) ?? error;
+  }
+  if (error instanceof Error && error.cause !== undefined) {
+    return error.cause;
+  }
+  return error;
+}
+
+function buildDetail(error: unknown, root: unknown): string {
+  const parts: string[] = [];
+  const rootMsg = rawMessage(root);
+  const leafMsg = rawMessage(error);
+  if (rootMsg) parts.push(rootMsg);
+  if (leafMsg && leafMsg !== rootMsg) parts.push(leafMsg);
+
+  const body = responseBodyOf(error) ?? responseBodyOf(root);
+  if (body) {
+    const trimmed = body.length > 1200 ? `${body.slice(0, 1200)}…` : body;
+    parts.push(`Respuesta: ${trimmed}`);
+  }
+
+  const status = statusOf(error) ?? statusOf(root);
+  if (status !== undefined && !parts.some((p) => p.includes(String(status)))) {
+    parts.push(`HTTP ${status}`);
+  }
+
+  return parts.filter(Boolean).join("\n") || String(root);
+}
+
 /**
- * Clasifica errores de extracción (IA vs sistema) con mensajes en español.
+ * Clasifica errores de IA / sistema con mensajes en español.
+ * Sirve para extracción de vacantes, revisión y optimización de CV.
  */
 export function classifyProcessError(error: unknown): ClassifiedError {
-  const detail = rawMessage(error);
+  const leaf = unwrapError(error);
+  const detail = buildDetail(leaf, error);
+  const haystack = detail;
+  const status = statusOf(leaf) ?? statusOf(error);
 
   if (
+    LoadAPIKeyError.isInstance(leaf) ||
     LoadAPIKeyError.isInstance(error) ||
-    /falta la variable de entorno|api[_ ]?key/i.test(detail)
+    /falta la variable de entorno|api[_ ]?key/i.test(haystack)
   ) {
     return {
       kind: "ai",
@@ -65,25 +118,30 @@ export function classifyProcessError(error: unknown): ClassifiedError {
   }
 
   if (
+    NoObjectGeneratedError.isInstance(leaf) ||
     NoObjectGeneratedError.isInstance(error) ||
+    TypeValidationError.isInstance(leaf) ||
     TypeValidationError.isInstance(error) ||
+    JSONParseError.isInstance(leaf) ||
     JSONParseError.isInstance(error) ||
-    /did not match schema|no object generated|invalid.*json|schema/i.test(
-      detail,
+    /did not match schema|no object generated|invalid.*json|TypeValidationError/i.test(
+      haystack,
     )
   ) {
     return {
       kind: "ai",
       code: "AI_SCHEMA",
       userMessage:
-        "La IA no pudo estructurar la vacante correctamente. Prueba de nuevo o cambia de modelo/proveedor.",
+        "La IA no pudo devolver un resultado estructurado válido. Prueba de nuevo o cambia de modelo/proveedor.",
       detail,
     };
   }
 
-  const status = statusOf(error);
-
-  if (status === 401 || status === 403 || /unauthorized|forbidden|invalid api/i.test(detail)) {
+  if (
+    status === 401 ||
+    status === 403 ||
+    /unauthorized|forbidden|invalid api|API_KEY_INVALID/i.test(haystack)
+  ) {
     return {
       kind: "ai",
       code: "AI_AUTH",
@@ -93,19 +151,26 @@ export function classifyProcessError(error: unknown): ClassifiedError {
     };
   }
 
-  if (status === 429 || /rate limit|quota|too many requests/i.test(detail)) {
+  if (
+    status === 429 ||
+    /rate limit|quota|too many requests|RESOURCE_EXHAUSTED|free_tier/i.test(
+      haystack,
+    )
+  ) {
+    const freeTier = /free_tier|free tier/i.test(haystack);
     return {
       kind: "ai",
       code: "AI_RATE_LIMIT",
-      userMessage:
-        "Se alcanzó el límite de uso del proveedor de IA. Espera un momento o prueba otro proveedor.",
+      userMessage: freeTier
+        ? "Se agotó la cuota gratuita de Gemini (límite del free tier). Espera ~1 minuto, cambia de modelo o configura DeepSeek/OpenRouter en `.env.local`."
+        : "Se alcanzó el límite de uso del proveedor de IA. Espera un momento o prueba otro proveedor.",
       detail,
     };
   }
 
   if (
     status === 408 ||
-    /timeout|timed out|ETIMEDOUT|AbortError/i.test(detail)
+    /timeout|timed out|ETIMEDOUT|AbortError/i.test(haystack)
   ) {
     return {
       kind: "ai",
@@ -117,9 +182,22 @@ export function classifyProcessError(error: unknown): ClassifiedError {
   }
 
   if (
+    APICallError.isInstance(leaf) ||
     APICallError.isInstance(error) ||
-    /fetch failed|ECONNREFUSED|ENOTFOUND|network|socket/i.test(detail)
+    /fetch failed|ECONNREFUSED|ENOTFOUND|network|socket|Cannot connect to API/i.test(
+      haystack,
+    )
   ) {
+    // APICallError sin status suele ser red; con status distinto de los ya cubiertos → proveedor
+    if (status !== undefined && status >= 400) {
+      return {
+        kind: "ai",
+        code: "AI_PROVIDER",
+        userMessage:
+          "El proveedor de IA devolvió un error. Revisa el detalle técnico o cambia de modelo/proveedor.",
+        detail,
+      };
+    }
     return {
       kind: "ai",
       code: "AI_NETWORK",
@@ -129,17 +207,17 @@ export function classifyProcessError(error: unknown): ClassifiedError {
     };
   }
 
-  if (AISDKError.isInstance(error) || status !== undefined) {
+  if (AISDKError.isInstance(leaf) || AISDKError.isInstance(error) || status !== undefined) {
     return {
       kind: "ai",
       code: "AI_PROVIDER",
       userMessage:
-        "El proveedor de IA devolvió un error al analizar la vacante. Revisa el detalle o cambia de modelo.",
+        "El proveedor de IA devolvió un error. Revisa el detalle técnico o cambia de modelo/proveedor.",
       detail,
     };
   }
 
-  if (/UNIQUE constraint failed|SQLITE_|database|drizzle/i.test(detail)) {
+  if (/UNIQUE constraint failed|SQLITE_|database|drizzle/i.test(haystack)) {
     return {
       kind: "system",
       code: "SYSTEM_DB",
@@ -153,7 +231,7 @@ export function classifyProcessError(error: unknown): ClassifiedError {
     kind: "system",
     code: "SYSTEM_UNKNOWN",
     userMessage:
-      "Ocurrió un error inesperado al procesar la vacante. Revisa el log de sistema.",
+      "Ocurrió un error inesperado al procesar con IA. Revisa el detalle técnico o el log de sistema.",
     detail,
   };
 }
