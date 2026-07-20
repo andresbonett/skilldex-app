@@ -16,7 +16,7 @@ El trabajo se ejecuta por fases, deteniéndose tras cada una para aprobación an
 | 1. Setup + DB (Drizzle + SQLite) | Completada |
 | 2. Motor de extracción IA multi-modelo | Completada |
 | 3. Dashboard (Kanban + lista de habilidades) | Completada |
-| 4. Alertas y utilidades de CV | Pendiente |
+| 4. Alertas y módulo de CV ATS | Completada |
 
 ---
 
@@ -92,10 +92,22 @@ skilldex-app/
 
 ---
 
-## FASE 4: Alertas y utilidades de CV
+## FASE 4: Alertas y módulo de CV ATS
 
-- Función que verifica si todas las skills vinculadas a un job están `completada = true` → badge "¡Perfil Listo! Contactar Empresa" en la tarjeta.
-- Modal/panel lateral que genera un prompt optimizado (a partir de las skills en DB) para copiar y usar en un chat externo (cartas de presentación / adaptar CV).
+Estado: **Completada**.
+
+### Alertas (Kanban)
+- Badge **¡Perfil Listo! Contactar Empresa** cuando todas las skills del job están `completada`.
+- Modal **Prompt CV externo** por tarjeta: genera un prompt (CV JSON + skills + oferta) para copiar a un chat externo.
+
+### Módulo `/cv`
+- Un CV activo por `user-local` + historial de versiones (`resumes` / `resume_versions`), sin `jobId`.
+- Seed inicial: CV ATS de Andrés Felipe Bonett Maldonado.
+- Editor por secciones + import/export JSON + preview ATS (plantilla HTML) + PDF (`@react-pdf/renderer`).
+- IA interna: revisión ATS y **optimización por cobertura de skills de mercado** (`scorePrioridad` / tracker), no por oferta.
+- Panel **A qué jobs enviar**: ranking determinista de match CV ↔ skills del job.
+
+Archivos clave: `src/app/cv/page.tsx`, `src/app/actions/resume.ts`, `src/lib/cv/*`, `src/components/cv/*`.
 
 ---
 

@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { FileTextIcon } from "lucide-react";
 
 import { JobPasteForm } from "@/components/dashboard/job-paste-form";
 import { KanbanBoard, type JobCard } from "@/components/dashboard/kanban-board";
@@ -24,6 +27,16 @@ const TABS: { id: TabId; label: string; short: string }[] = [
   { id: "requisitos", label: "Requisitos", short: "Requisitos" },
   { id: "postulaciones", label: "Postulaciones", short: "Kanban" },
 ];
+
+function isTabId(value: string | null): value is TabId {
+  return (
+    value === "vacante" ||
+    value === "tecnicas" ||
+    value === "blandas" ||
+    value === "requisitos" ||
+    value === "postulaciones"
+  );
+}
 
 function Panel({
   title,
@@ -52,7 +65,11 @@ export function DashboardShell({
   skills: SkillItem[];
   jobs: JobCard[];
 }) {
-  const [tab, setTab] = useState<TabId>("vacante");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab");
+  const [tab, setTab] = useState<TabId>(
+    isTabId(initialTab) ? initialTab : "vacante",
+  );
 
   const counts = useMemo(() => {
     const active = (tipo: string) =>
@@ -77,15 +94,24 @@ export function DashboardShell({
     <>
       <header className="sticky top-0 z-20 border-b border-border/50 bg-white/70 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-5 sm:px-6 sm:py-6">
-          <div>
-            <p className="font-[family-name:var(--font-display)] text-3xl tracking-tight text-foreground sm:text-4xl">
-              SkillDex
-            </p>
-            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-              Prioriza el estudio técnico; las blandas y requisitos van en
-              pistas aparte. La URL de cada oferta es obligatoria para el
-              seguimiento.
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-[family-name:var(--font-display)] text-3xl tracking-tight text-foreground sm:text-4xl">
+                SkillDex
+              </p>
+              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                Prioriza el estudio técnico; las blandas y requisitos van en
+                pistas aparte. La URL de cada oferta es obligatoria para el
+                seguimiento.
+              </p>
+            </div>
+            <Link
+              href="/cv"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-white/70 px-3.5 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-white"
+            >
+              <FileTextIcon className="size-3.5" />
+              Hoja de vida
+            </Link>
           </div>
 
           <nav

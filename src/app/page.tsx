@@ -1,13 +1,38 @@
+import { Suspense } from "react";
+
 import { getJobsForUser, getSkillsForUser } from "@/app/actions/dashboard";
+import { getJobsPerfilListoMap } from "@/app/actions/resume";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [jobs, skills] = await Promise.all([
+  const [jobs, skills, perfilListo] = await Promise.all([
     getJobsForUser(),
     getSkillsForUser(),
+    getJobsPerfilListoMap(),
   ]);
+
+  const shellProps = {
+    skills: skills.map((s) => ({
+      id: s.id,
+      nombreHabilidad: s.nombreHabilidad,
+      tipo: s.tipo,
+      estado: s.estado,
+      nivelDominio: s.nivelDominio,
+      frecuencia: s.frecuencia,
+      scorePrioridad: s.scorePrioridad,
+    })),
+    jobs: jobs.map((j) => ({
+      id: j.id,
+      cargo: j.cargo,
+      empresa: j.empresa,
+      estadoPostulacion: j.estadoPostulacion,
+      urlOriginal: j.urlOriginal,
+      fechaCreacion: j.fechaCreacion,
+      perfilListo: perfilListo[j.id] ?? false,
+    })),
+  };
 
   return (
     <div className="relative isolate min-h-full flex-1 overflow-x-hidden">
@@ -20,25 +45,9 @@ export default async function Home() {
         className="pointer-events-none absolute inset-0 -z-10 opacity-[0.35] [background-image:linear-gradient(oklch(0.7_0.02_180/0.08)_1px,transparent_1px),linear-gradient(90deg,oklch(0.7_0.02_180/0.08)_1px,transparent_1px)] [background-size:28px_28px]"
       />
 
-      <DashboardShell
-        skills={skills.map((s) => ({
-          id: s.id,
-          nombreHabilidad: s.nombreHabilidad,
-          tipo: s.tipo,
-          estado: s.estado,
-          nivelDominio: s.nivelDominio,
-          frecuencia: s.frecuencia,
-          scorePrioridad: s.scorePrioridad,
-        }))}
-        jobs={jobs.map((j) => ({
-          id: j.id,
-          cargo: j.cargo,
-          empresa: j.empresa,
-          estadoPostulacion: j.estadoPostulacion,
-          urlOriginal: j.urlOriginal,
-          fechaCreacion: j.fechaCreacion,
-        }))}
-      />
+      <Suspense fallback={null}>
+        <DashboardShell {...shellProps} />
+      </Suspense>
     </div>
   );
 }

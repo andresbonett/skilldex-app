@@ -1,9 +1,12 @@
 "use client";
 
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
+import { SparklesIcon } from "lucide-react";
 
 import { updateJobStatus } from "@/app/actions/dashboard";
+import { ExternalCvPromptModal } from "@/components/cv/external-cv-prompt-modal";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -22,16 +25,19 @@ export type JobCard = {
   estadoPostulacion: EstadoPostulacion;
   urlOriginal: string | null;
   fechaCreacion: Date | null;
+  perfilListo?: boolean;
 };
 
 function JobTicket({
   job,
   disabled,
   onStatusChange,
+  onPrompt,
 }: {
   job: JobCard;
   disabled: boolean;
   onStatusChange: (estado: EstadoPostulacion) => void;
+  onPrompt: () => void;
 }) {
   return (
     <article className="rounded-xl border border-border/80 bg-white/80 p-3 shadow-sm backdrop-blur-sm">
@@ -39,6 +45,11 @@ function JobTicket({
         {job.cargo}
       </h4>
       <p className="mt-1 text-sm text-muted-foreground">{job.empresa}</p>
+      {job.perfilListo ? (
+        <Badge className="mt-2 bg-teal-700 text-white hover:bg-teal-700">
+          ¡Perfil Listo! Contactar Empresa
+        </Badge>
+      ) : null}
       {job.urlOriginal ? (
         <a
           href={job.urlOriginal}
@@ -49,7 +60,7 @@ function JobTicket({
           Ver original
         </a>
       ) : null}
-      <div className="mt-3">
+      <div className="mt-3 flex flex-col gap-2">
         <Select
           value={job.estadoPostulacion}
           disabled={disabled}
@@ -74,6 +85,16 @@ function JobTicket({
             ))}
           </SelectContent>
         </Select>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          className="w-full"
+          onClick={onPrompt}
+        >
+          <SparklesIcon />
+          Prompt CV externo
+        </Button>
       </div>
     </article>
   );
@@ -81,6 +102,7 @@ function JobTicket({
 
 export function KanbanBoard({ jobs }: { jobs: JobCard[] }) {
   const [isPending, startTransition] = useTransition();
+  const [promptJob, setPromptJob] = useState<JobCard | null>(null);
   const [optimisticJobs, setOptimisticJobs] = useOptimistic(
     jobs,
     (current, update: { id: number; estadoPostulacion: EstadoPostulacion }) =>
@@ -133,6 +155,7 @@ export function KanbanBoard({ jobs }: { jobs: JobCard[] }) {
                       job={job}
                       disabled={isPending}
                       onStatusChange={(estado) => handleStatus(job.id, estado)}
+                      onPrompt={() => setPromptJob(job)}
                     />
                   ))
                 )}
@@ -157,11 +180,23 @@ export function KanbanBoard({ jobs }: { jobs: JobCard[] }) {
                 job={job}
                 disabled={isPending}
                 onStatusChange={(estado) => handleStatus(job.id, estado)}
+                onPrompt={() => setPromptJob(job)}
               />
             ))}
           </div>
         </section>
       ) : null}
+
+      <ExternalCvPromptModal
+        open={promptJob !== null}
+        onOpenChange={(open) => {
+          if (!open) setPromptJob(null);
+        }}
+        jobId={promptJob?.id}
+        jobLabel={
+          promptJob ? `${promptJob.cargo} — ${promptJob.empresa}` : undefined
+        }
+      />
     </div>
   );
 }

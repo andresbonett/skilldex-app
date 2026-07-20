@@ -136,6 +136,46 @@ export const userSettings = sqliteTable("user_settings", {
     .default("gemini-3.5-flash"),
 });
 
+export const resumeVersionSourceValues = [
+  "manual",
+  "import",
+  "ai_review",
+  "ai_optimize",
+  "restore",
+  "seed",
+] as const;
+
+export type ResumeVersionSource = (typeof resumeVersionSourceValues)[number];
+
+export const resumes = sqliteTable(
+  "resumes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id").notNull(),
+    title: text("title").notNull().default("Mi CV"),
+    dataJson: text("data_json").notNull(),
+    currentVersionId: integer("current_version_id"),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [uniqueIndex("resumes_user_id_idx").on(table.userId)],
+);
+
+export const resumeVersions = sqliteTable("resume_versions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  resumeId: integer("resume_id")
+    .notNull()
+    .references(() => resumes.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  source: text("source", { enum: resumeVersionSourceValues }).notNull(),
+  dataJson: text("data_json").notNull(),
+  aiNotes: text("ai_notes"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const jobsRelations = relations(jobs, ({ many }) => ({
   skills: many(jobSkillsRelation),
 }));
@@ -157,3 +197,14 @@ export const jobSkillsRelationRelations = relations(
     }),
   }),
 );
+
+export const resumesRelations = relations(resumes, ({ many }) => ({
+  versions: many(resumeVersions),
+}));
+
+export const resumeVersionsRelations = relations(resumeVersions, ({ one }) => ({
+  resume: one(resumes, {
+    fields: [resumeVersions.resumeId],
+    references: [resumes.id],
+  }),
+}));
