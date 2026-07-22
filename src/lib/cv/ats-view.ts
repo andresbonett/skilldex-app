@@ -1,4 +1,9 @@
 import {
+  computeExperienceDurationLabel,
+  formatCvMonthLabel,
+  isPresentDate,
+} from "@/lib/cv/dates";
+import {
   TECHNICAL_SKILL_KEYS,
   TECHNICAL_SKILL_LABELS,
   type CvDocument,
@@ -59,20 +64,26 @@ export function toAtsView(doc: CvDocument): AtsView {
     items: doc.technicalSkills[key] ?? [],
   })).filter((g) => g.items.length > 0);
 
-  const experience: AtsExperience[] = doc.experience.map((job) => ({
-    title: job.title,
-    company: job.company,
-    location: job.location ?? "",
-    start: job.start,
-    end: job.end,
-    durationLabel: job.durationLabel ?? "",
-    summary: job.summary ?? "",
-    bullets: job.responsibilities.length
-      ? job.responsibilities
-      : job.summary
-        ? [job.summary]
-        : [],
-  }));
+  const experience: AtsExperience[] = doc.experience.map((job) => {
+    const endRaw = job.end?.trim() || "";
+    const endDisplay = isPresentDate(endRaw)
+      ? "Actualidad"
+      : formatCvMonthLabel(endRaw, { preferEndOfYear: true });
+    return {
+      title: job.title,
+      company: job.company,
+      location: job.location ?? "",
+      start: formatCvMonthLabel(job.start),
+      end: endDisplay,
+      durationLabel: computeExperienceDurationLabel(job.start, endRaw || job.end),
+      summary: job.summary ?? "",
+      bullets: job.responsibilities.length
+        ? job.responsibilities
+        : job.summary
+          ? [job.summary]
+          : [],
+    };
+  });
 
   const projects: AtsProject[] = doc.featuredProjects
     .filter((p) => !p.status?.toLowerCase().includes("requiere validación"))
@@ -95,8 +106,10 @@ export function toAtsView(doc: CvDocument): AtsView {
     education: doc.education.map((e) => ({
       title: e.title,
       institution: e.institution,
-      start: e.start ?? "",
-      end: e.end ?? "",
+      start: formatCvMonthLabel(e.start ?? ""),
+      end: isPresentDate(e.end)
+        ? "Actualidad"
+        : formatCvMonthLabel(e.end ?? "", { preferEndOfYear: true }),
       detail: [e.type, e.status, e.detail].filter(Boolean).join(" · "),
     })),
     languages: doc.languages.map((l) => ({

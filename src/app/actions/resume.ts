@@ -30,6 +30,7 @@ import {
   computeJobMatch,
   type JobMatchResult,
 } from "@/lib/cv/match";
+import { withComputedDurations } from "@/lib/cv/dates";
 import {
   type CvDocument,
   parseCvDocument,
@@ -259,7 +260,7 @@ export async function saveResume(
     const n = (await countVersions(resume.id)) + 1;
     await insertVersionAndSetCurrent({
       resumeId: resume.id,
-      data: parsed.data,
+      data: withComputedDurations(parsed.data),
       source: "manual",
       label: label?.trim() || `v${n} — Guardado manual`,
     });
@@ -268,6 +269,63 @@ export async function saveResume(
     return { success: true, resume: await getOrCreateResume() };
   } catch (error) {
     return failFromError("saveResume", error);
+  }
+}
+
+/** Actualiza el CV y la versión actual sin crear un snapshot nuevo. */
+export async function updateResume(
+  data: unknown,
+): Promise<ActionOk<{ resume: ResumeBundle }> | ActionErr> {
+  const parsed = parseCvDocumentSafe(data);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: "El CV no tiene un formato válido.",
+      code: "INVALID_CV",
+    };
+  }
+
+  try {
+    const resume = await getOrCreateResume();
+    const enriched = withComputedDurations(parsed.data);
+    const dataJson = serializeCvDocument(enriched);
+
+    if (resume.currentVersionId) {
+      await db
+        .update(resumeVersions)
+        .set({ dataJson })
+        .where(
+          and(
+            eq(resumeVersions.id, resume.currentVersionId),
+            eq(resumeVersions.resumeId, resume.id),
+          ),
+        );
+    } else {
+      const n = (await countVersions(resume.id)) + 1;
+      await insertVersionAndSetCurrent({
+        resumeId: resume.id,
+        data: enriched,
+        source: "manual",
+        label: `v${n} — Guardado manual`,
+      });
+      revalidatePath("/cv");
+      revalidatePath("/");
+      return { success: true, resume: await getOrCreateResume() };
+    }
+
+    await db
+      .update(resumes)
+      .set({
+        dataJson,
+        updatedAt: new Date(),
+      })
+      .where(eq(resumes.id, resume.id));
+
+    revalidatePath("/cv");
+    revalidatePath("/");
+    return { success: true, resume: await getOrCreateResume() };
+  } catch (error) {
+    return failFromError("updateResume", error);
   }
 }
 
@@ -300,7 +358,7 @@ export async function importResumeJson(
     const n = (await countVersions(resume.id)) + 1;
     await insertVersionAndSetCurrent({
       resumeId: resume.id,
-      data: parsed.data,
+      data: withComputedDurations(parsed.data),
       source: "import",
       label: `v${n} — Importación JSON`,
     });

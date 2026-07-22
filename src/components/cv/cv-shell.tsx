@@ -7,6 +7,7 @@ import {
   DownloadIcon,
   FileUpIcon,
   Loader2Icon,
+  RefreshCwIcon,
   SaveIcon,
   SparklesIcon,
   WandSparklesIcon,
@@ -18,6 +19,7 @@ import {
   optimizeResumeForMarketSkills,
   reviewResumeWithAI,
   saveResume,
+  updateResume,
   type ResumeBundle,
 } from "@/app/actions/resume";
 import { AtsPreview } from "@/components/cv/ats-preview";
@@ -40,6 +42,12 @@ import {
   DEFAULT_PROVIDER,
   type AIProvider,
 } from "@/lib/ai/models";
+import {
+  computeExperienceDurationLabel,
+  isPresentDate,
+  toMonthInputValue,
+  withComputedDurations,
+} from "@/lib/cv/dates";
 import type { JobMatchResult } from "@/lib/cv/match";
 import {
   TECHNICAL_SKILL_KEYS,
@@ -303,7 +311,7 @@ export function CvShell({
     clearFeedback();
     withMetaApplied((doc) => {
       startTransition(async () => {
-        const result = await saveResume(doc);
+        const result = await saveResume(withComputedDurations(doc));
         if (!result.success) {
           showActionError(result.error, {
             detail: result.detail,
@@ -313,7 +321,27 @@ export function CvShell({
           return;
         }
         syncFromBundle(result.resume);
-        setMessage("Versión guardada.");
+        setMessage("Nueva versión guardada.");
+        router.refresh();
+      });
+    });
+  }
+
+  function handleUpdate() {
+    clearFeedback();
+    withMetaApplied((doc) => {
+      startTransition(async () => {
+        const result = await updateResume(withComputedDurations(doc));
+        if (!result.success) {
+          showActionError(result.error, {
+            detail: result.detail,
+            code: result.code,
+            logId: result.logId,
+          });
+          return;
+        }
+        syncFromBundle(result.resume);
+        setMessage("Versión actual actualizada (sin nuevo snapshot).");
         router.refresh();
       });
     });
@@ -346,9 +374,12 @@ export function CvShell({
         softSkills: parsed.softSkills ?? data.softSkills,
         atsKeywords: parsed.atsKeywords ?? data.atsKeywords,
       };
-      const out = new Blob([serializeCvDocument(merged)], {
-        type: "application/json",
-      });
+      const out = new Blob(
+        [serializeCvDocument(withComputedDurations(merged))],
+        {
+          type: "application/json",
+        },
+      );
       const url = URL.createObjectURL(out);
       const a = document.createElement("a");
       a.href = url;
@@ -472,7 +503,7 @@ export function CvShell({
         softSkills: parsed.softSkills ?? data.softSkills,
         atsKeywords: parsed.atsKeywords ?? data.atsKeywords,
       };
-      await downloadCvPdf(merged);
+      await downloadCvPdf(withComputedDurations(merged));
       setMessage("PDF generado.");
     } catch {
       showActionError("No se pudo generar el PDF.");
@@ -540,13 +571,29 @@ export function CvShell({
               size="sm"
               disabled={pending}
               onClick={handleSave}
+              title="Crea un nuevo snapshot en el historial"
             >
               {pending ? (
                 <Loader2Icon className="animate-spin" />
               ) : (
                 <SaveIcon />
               )}
-              Guardar versión
+              Guardar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={pending}
+              onClick={handleUpdate}
+              title="Modifica la versión actual sin crear otra"
+            >
+              {pending ? (
+                <Loader2Icon className="animate-spin" />
+              ) : (
+                <RefreshCwIcon />
+              )}
+              Actualizar
             </Button>
             <Button
               type="button"
@@ -760,171 +807,218 @@ export function CvShell({
           </Panel>
 
           <Panel
-            title="Competencias clave"
-            description="Una por línea."
+            title="Experiencia"
+            description="Fechas en formato mes/año. Si el puesto sigue activo, marca Actualidad; la duración se calcula sola."
           >
-            <Textarea
-              rows={6}
-              value={listToLines(data.coreCompetencies)}
-              onChange={(e) =>
-                setData((prev) => ({
-                  ...prev,
-                  coreCompetencies: linesToList(e.target.value),
-                }))
-              }
-            />
-          </Panel>
-
-          <Panel
-            title="Habilidades técnicas"
-            description="Ítems separados por coma, por categoría."
-          >
-            <div className="flex flex-col gap-3">
-              {TECHNICAL_SKILL_KEYS.map((key) => (
-                <div key={key}>
-                  <FieldLabel>{TECHNICAL_SKILL_LABELS[key]}</FieldLabel>
-                  <Textarea
-                    rows={2}
-                    value={(data.technicalSkills[key] ?? []).join(", ")}
-                    onChange={(e) => updateSkillCategory(key, e.target.value)}
-                  />
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Experiencia">
             <div className="flex flex-col gap-4">
-              {data.experience.map((job, ji) => (
-                <div
-                  key={ji}
-                  className="rounded-xl border border-border/50 p-3"
-                >
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <FieldLabel>Cargo</FieldLabel>
-                      <Input
-                        value={job.title}
-                        onChange={(e) => {
-                          const title = e.target.value;
-                          setData((prev) => {
-                            const experience = [...prev.experience];
-                            experience[ji] = { ...experience[ji]!, title };
-                            return { ...prev, experience };
-                          });
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <FieldLabel>Empresa</FieldLabel>
-                      <Input
-                        value={job.company}
-                        onChange={(e) => {
-                          const company = e.target.value;
-                          setData((prev) => {
-                            const experience = [...prev.experience];
-                            experience[ji] = { ...experience[ji]!, company };
-                            return { ...prev, experience };
-                          });
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <FieldLabel>Ubicación</FieldLabel>
-                      <Input
-                        value={job.location ?? ""}
-                        onChange={(e) => {
-                          const location = e.target.value;
-                          setData((prev) => {
-                            const experience = [...prev.experience];
-                            experience[ji] = { ...experience[ji]!, location };
-                            return { ...prev, experience };
-                          });
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <FieldLabel>Inicio</FieldLabel>
-                      <Input
-                        value={job.start}
-                        onChange={(e) => {
-                          const start = e.target.value;
-                          setData((prev) => {
-                            const experience = [...prev.experience];
-                            experience[ji] = { ...experience[ji]!, start };
-                            return { ...prev, experience };
-                          });
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <FieldLabel>Fin</FieldLabel>
-                      <Input
-                        value={job.end}
-                        onChange={(e) => {
-                          const end = e.target.value;
-                          setData((prev) => {
-                            const experience = [...prev.experience];
-                            experience[ji] = { ...experience[ji]!, end };
-                            return { ...prev, experience };
-                          });
-                        }}
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <FieldLabel>Resumen del rol</FieldLabel>
-                      <Textarea
-                        rows={3}
-                        value={job.summary ?? ""}
-                        onChange={(e) => {
-                          const summary = e.target.value;
-                          setData((prev) => {
-                            const experience = [...prev.experience];
-                            experience[ji] = { ...experience[ji]!, summary };
-                            return { ...prev, experience };
-                          });
-                        }}
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <FieldLabel>Responsabilidades (una por línea)</FieldLabel>
-                      <Textarea
-                        rows={8}
-                        value={listToLines(job.responsibilities)}
-                        onChange={(e) => {
-                          const responsibilities = linesToList(e.target.value);
-                          setData((prev) => {
-                            const experience = [...prev.experience];
-                            experience[ji] = {
-                              ...experience[ji]!,
-                              responsibilities,
-                            };
-                            return { ...prev, experience };
-                          });
-                        }}
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <FieldLabel>Tecnologías (coma)</FieldLabel>
-                      <Textarea
-                        rows={2}
-                        value={(job.technologies ?? []).join(", ")}
-                        onChange={(e) => {
-                          const technologies = csvToList(e.target.value);
-                          setData((prev) => {
-                            const experience = [...prev.experience];
-                            experience[ji] = {
-                              ...experience[ji]!,
-                              technologies,
-                            };
-                            return { ...prev, experience };
-                          });
-                        }}
-                      />
+              {data.experience.map((job, ji) => {
+                const currentRole = isPresentDate(job.end);
+                const durationPreview = computeExperienceDurationLabel(
+                  job.start,
+                  job.end,
+                );
+                return (
+                  <div
+                    key={ji}
+                    className="rounded-xl border border-border/50 p-3"
+                  >
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="sm:col-span-2">
+                        <FieldLabel>Cargo</FieldLabel>
+                        <Input
+                          value={job.title}
+                          onChange={(e) => {
+                            const title = e.target.value;
+                            setData((prev) => {
+                              const experience = [...prev.experience];
+                              experience[ji] = { ...experience[ji]!, title };
+                              return { ...prev, experience };
+                            });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Empresa</FieldLabel>
+                        <Input
+                          value={job.company}
+                          onChange={(e) => {
+                            const company = e.target.value;
+                            setData((prev) => {
+                              const experience = [...prev.experience];
+                              experience[ji] = { ...experience[ji]!, company };
+                              return { ...prev, experience };
+                            });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Ubicación</FieldLabel>
+                        <Input
+                          value={job.location ?? ""}
+                          onChange={(e) => {
+                            const location = e.target.value;
+                            setData((prev) => {
+                              const experience = [...prev.experience];
+                              experience[ji] = {
+                                ...experience[ji]!,
+                                location,
+                              };
+                              return { ...prev, experience };
+                            });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Inicio</FieldLabel>
+                        <Input
+                          type="month"
+                          value={toMonthInputValue(job.start)}
+                          onChange={(e) => {
+                            const start = e.target.value;
+                            setData((prev) => {
+                              const experience = [...prev.experience];
+                              const current = experience[ji]!;
+                              experience[ji] = {
+                                ...current,
+                                start,
+                                durationLabel: computeExperienceDurationLabel(
+                                  start,
+                                  current.end,
+                                ),
+                              };
+                              return { ...prev, experience };
+                            });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Fin</FieldLabel>
+                        <div className="flex flex-col gap-2">
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              className="size-3.5 accent-foreground"
+                              checked={currentRole}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setData((prev) => {
+                                  const experience = [...prev.experience];
+                                  const current = experience[ji]!;
+                                  const end = checked
+                                    ? "Actualidad"
+                                    : toMonthInputValue(current.end) ||
+                                      new Date().toISOString().slice(0, 7);
+                                  experience[ji] = {
+                                    ...current,
+                                    end,
+                                    durationLabel: computeExperienceDurationLabel(
+                                      current.start,
+                                      end,
+                                    ),
+                                  };
+                                  return { ...prev, experience };
+                                });
+                              }}
+                            />
+                            Actualidad
+                          </label>
+                          {!currentRole ? (
+                            <Input
+                              type="month"
+                              value={toMonthInputValue(job.end, {
+                                preferEndOfYear: true,
+                              })}
+                              onChange={(e) => {
+                                const end = e.target.value;
+                                setData((prev) => {
+                                  const experience = [...prev.experience];
+                                  const current = experience[ji]!;
+                                  experience[ji] = {
+                                    ...current,
+                                    end,
+                                    durationLabel:
+                                      computeExperienceDurationLabel(
+                                        current.start,
+                                        end,
+                                      ),
+                                  };
+                                  return { ...prev, experience };
+                                });
+                              }}
+                            />
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Duración estimada: {durationPreview || "—"}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {!currentRole && durationPreview ? (
+                        <div className="sm:col-span-2">
+                          <p className="text-xs text-muted-foreground">
+                            Duración estimada: {durationPreview}
+                          </p>
+                        </div>
+                      ) : null}
+                      <div className="sm:col-span-2">
+                        <FieldLabel>Resumen del rol</FieldLabel>
+                        <Textarea
+                          rows={3}
+                          value={job.summary ?? ""}
+                          onChange={(e) => {
+                            const summary = e.target.value;
+                            setData((prev) => {
+                              const experience = [...prev.experience];
+                              experience[ji] = { ...experience[ji]!, summary };
+                              return { ...prev, experience };
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <FieldLabel>
+                          Responsabilidades (una por línea)
+                        </FieldLabel>
+                        <Textarea
+                          rows={8}
+                          value={listToLines(job.responsibilities)}
+                          onChange={(e) => {
+                            const responsibilities = linesToList(
+                              e.target.value,
+                            );
+                            setData((prev) => {
+                              const experience = [...prev.experience];
+                              experience[ji] = {
+                                ...experience[ji]!,
+                                responsibilities,
+                              };
+                              return { ...prev, experience };
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <FieldLabel>Tecnologías (coma)</FieldLabel>
+                        <Textarea
+                          rows={2}
+                          value={(job.technologies ?? []).join(", ")}
+                          onChange={(e) => {
+                            const technologies = csvToList(e.target.value);
+                            setData((prev) => {
+                              const experience = [...prev.experience];
+                              experience[ji] = {
+                                ...experience[ji]!,
+                                technologies,
+                              };
+                              return { ...prev, experience };
+                            });
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Panel>
 
@@ -1064,6 +1158,39 @@ export function CvShell({
           </Panel>
 
           <Panel
+            title="Competencias clave"
+            description="Compacto · una por línea · al final del CV."
+          >
+            <Textarea
+              rows={3}
+              value={listToLines(data.coreCompetencies)}
+              onChange={(e) =>
+                setData((prev) => ({
+                  ...prev,
+                  coreCompetencies: linesToList(e.target.value),
+                }))
+              }
+            />
+          </Panel>
+
+          <Panel
+            title="Habilidades técnicas"
+            description="Compacto · ítems separados por coma · al final del CV."
+          >
+            <div className="flex flex-col gap-2">
+              {TECHNICAL_SKILL_KEYS.map((key) => (
+                <div key={key}>
+                  <FieldLabel>{TECHNICAL_SKILL_LABELS[key]}</FieldLabel>
+                  <Input
+                    value={(data.technicalSkills[key] ?? []).join(", ")}
+                    onChange={(e) => updateSkillCategory(key, e.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel
             title="Metadatos (JSON)"
             description="cloud, IA, diseño, careerPositioning, cvNotes, softSkills, atsKeywords…"
           >
@@ -1086,7 +1213,7 @@ export function CvShell({
 
           <Panel
             title="Historial de versiones"
-            description="Snapshots inmutables. Restaurar crea una nueva versión."
+            description="Guardar crea un snapshot. Actualizar modifica el actual. Restaurar crea una nueva versión."
           >
             <VersionHistory
               versions={versions}

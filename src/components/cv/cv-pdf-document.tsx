@@ -30,9 +30,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: "Helvetica-Bold",
     color: "#0f172a",
-    marginBottom: 4,
+    marginBottom: 10,
   },
-  headline: { fontSize: 12, color: "#475569", marginBottom: 6 },
+  headline: { fontSize: 12, color: "#475569", marginBottom: 8 },
   contact: { fontSize: 9.5, color: "#475569", lineHeight: 1.45 },
   sectionTitle: {
     fontSize: 11,
@@ -46,8 +46,26 @@ const styles = StyleSheet.create({
     marginTop: SECTION_GAP,
     marginBottom: GAP,
   },
+  sectionTitleCompact: {
+    fontSize: 10,
+    fontFamily: "Helvetica-Bold",
+    color: "#0f172a",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    borderBottomWidth: 1,
+    borderBottomColor: "#cbd5e1",
+    paddingBottom: 2,
+    marginTop: 10,
+    marginBottom: 4,
+  },
   paragraph: { marginBottom: GAP, textAlign: "justify" },
-  skillGroup: { marginBottom: 4 },
+  competencies: {
+    fontSize: 9,
+    lineHeight: 1.35,
+    marginBottom: 4,
+    color: "#334155",
+  },
+  skillGroup: { marginBottom: 2, fontSize: 9, lineHeight: 1.35, color: "#334155" },
   skillLabel: { fontFamily: "Helvetica-Bold", color: "#0f172a" },
   entry: { marginBottom: GAP },
   entryTitle: {
@@ -112,23 +130,6 @@ function CvPdfDocument({ data }: { data: CvDocument }) {
 
         <Text style={styles.sectionTitle}>Perfil Profesional</Text>
         <Text style={styles.paragraph}>{profile}</Text>
-
-        {view.coreCompetencies.length > 0 ? (
-          <>
-            <Text style={styles.sectionTitle}>Competencias Clave</Text>
-            <Text style={styles.paragraph}>
-              {view.coreCompetencies.join(" · ")}
-            </Text>
-          </>
-        ) : null}
-
-        <Text style={styles.sectionTitle}>Habilidades Técnicas</Text>
-        {skillGroups.map((group) => (
-          <Text key={group.label} style={styles.skillGroup}>
-            <Text style={styles.skillLabel}>{group.label}: </Text>
-            {group.items.join(", ")}.
-          </Text>
-        ))}
 
         <Text style={styles.sectionTitle}>Experiencia Profesional</Text>
         {experience.map((job, idx) => {
@@ -215,6 +216,27 @@ function CvPdfDocument({ data }: { data: CvDocument }) {
             </Text>
           </View>
         ))}
+
+        {view.coreCompetencies.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitleCompact}>Competencias Clave</Text>
+            <Text style={styles.competencies}>
+              {view.coreCompetencies.join(" · ")}
+            </Text>
+          </>
+        ) : null}
+
+        {skillGroups.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitleCompact}>Habilidades Técnicas</Text>
+            {skillGroups.map((group) => (
+              <Text key={group.label} style={styles.skillGroup}>
+                <Text style={styles.skillLabel}>{group.label}: </Text>
+                {group.items.join(", ")}.
+              </Text>
+            ))}
+          </>
+        ) : null}
       </Page>
     </Document>
   );

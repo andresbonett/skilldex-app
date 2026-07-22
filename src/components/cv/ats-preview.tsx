@@ -25,11 +25,11 @@ export function AtsPreview({ data }: { data: CvDocument }) {
         }
         .ats-preview .ats-header { text-align: center; margin-bottom: 25px; }
         .ats-preview h1 {
-          font-size: 20pt; color: #0f172a; margin: 0 0 5px 0;
+          font-size: 20pt; color: #0f172a; margin: 0 0 10px 0;
           font-weight: bold; letter-spacing: -0.5px;
         }
         .ats-preview .ats-title-sub {
-          font-size: 13pt; font-weight: normal; color: #475569; margin: 0 0 10px 0;
+          font-size: 13pt; font-weight: normal; color: #475569; margin: 0 0 12px 0;
         }
         .ats-preview .ats-contact {
           font-size: 9.5pt; color: #475569; line-height: 1.6;
@@ -39,9 +39,23 @@ export function AtsPreview({ data }: { data: CvDocument }) {
           letter-spacing: 0.5px; border-bottom: 1px solid #cbd5e1;
           padding-bottom: 3px; margin: 14px 0 8px 0;
         }
+        .ats-preview h2.ats-h2-compact {
+          margin: 10px 0 4px 0;
+          font-size: 10pt;
+        }
         .ats-preview p { margin: 0 0 8px 0; text-align: justify; }
-        .ats-preview .ats-skills-group { margin-bottom: 4px; }
+        .ats-preview .ats-skills-block {
+          font-size: 9pt;
+          line-height: 1.35;
+          color: #334155;
+        }
+        .ats-preview .ats-skills-group { margin-bottom: 2px; }
         .ats-preview .ats-skills-label { font-weight: bold; color: #0f172a; }
+        .ats-preview .ats-competencies {
+          font-size: 9pt;
+          line-height: 1.35;
+          margin: 0 0 4px 0;
+        }
         .ats-preview .ats-job-entry { margin-bottom: 10px; }
         .ats-preview .ats-job-title {
           font-size: 11pt; font-weight: bold; color: #0f172a; margin: 0 0 2px 0;
@@ -79,23 +93,6 @@ export function AtsPreview({ data }: { data: CvDocument }) {
 
       <h2>Perfil Profesional</h2>
       <p>{profile}</p>
-
-      {view.coreCompetencies.length > 0 ? (
-        <>
-          <h2>Competencias Clave</h2>
-          <p>{view.coreCompetencies.join(" · ")}</p>
-        </>
-      ) : null}
-
-      <h2>Habilidades Técnicas</h2>
-      <div>
-        {skillGroups.map((group) => (
-          <div key={group.label} className="ats-skills-group">
-            <span className="ats-skills-label">{group.label}:</span>{" "}
-            {group.items.join(", ")}.
-          </div>
-        ))}
-      </div>
 
       <h2>Experiencia Profesional</h2>
       {experience.map((job, idx) => {
@@ -181,6 +178,27 @@ export function AtsPreview({ data }: { data: CvDocument }) {
           </li>
         ))}
       </ul>
+
+      {view.coreCompetencies.length > 0 ? (
+        <>
+          <h2 className="ats-h2-compact">Competencias Clave</h2>
+          <p className="ats-competencies">{view.coreCompetencies.join(" · ")}</p>
+        </>
+      ) : null}
+
+      {skillGroups.length > 0 ? (
+        <>
+          <h2 className="ats-h2-compact">Habilidades Técnicas</h2>
+          <div className="ats-skills-block">
+            {skillGroups.map((group) => (
+              <div key={group.label} className="ats-skills-group">
+                <span className="ats-skills-label">{group.label}:</span>{" "}
+                {group.items.join(", ")}.
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
     </article>
   );
 }
